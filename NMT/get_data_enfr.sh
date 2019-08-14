@@ -1,30 +1,36 @@
-# Copyright (c) 2018-present, Facebook, Inc.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-#
+#!/bin/bash
+#SBATCH --job-name unsupervised
+#SBATCH --account shashanks
+#SBATCH --partition short 
+#SBATCH --nodes 1
+#SBATCH --mem 45G
+#SBATCH --gres gpu:1
+#SBATCH --time 06:00:00
+#SBATCH --mail-type END
+
+module load use.own
+module add python/3.7.0
+module add pytorch/1.0.0
 
 set -e
 
-#
-# Data preprocessing configuration
-#
-
-N_MONO=10000000  # number of monolingual sentences for each language
+N_MONO=1000000  # number of monolingual sentences for each language
 CODES=60000      # number of BPE codes
 N_THREADS=48     # number of threads in data preprocessing
 N_EPOCHS=10      # number of fastText epochs
 
+REM_DIR="ada:/share1/shashanks/UnsupervisedMT"
+SSD_DIR=/ssd_scratch/cvit/shashanks/UnsupervisedMT/NMT
 
-#
-# Initialize tools and data paths
-#
+ssh ada mkdir -p $REM_DIR
+mkdir -p $SSD_DIR
+
+#rsync -rvz $REM_DIR/ $SSD_DIR/
 
 # main paths
-UMT_PATH=$PWD
-TOOLS_PATH=$PWD/tools
-DATA_PATH=$PWD/data
+UMT_PATH=$SSD_DIR
+TOOLS_PATH=$SSD_DIR/tools
+DATA_PATH=$SSD_DIR/data
 MONO_PATH=$DATA_PATH/mono
 PARA_PATH=$DATA_PATH/para
 
@@ -90,7 +96,7 @@ cd $TOOLS_PATH
 if [ ! -f "$FASTBPE" ]; then
   echo "Compiling fastBPE..."
   cd $FASTBPE_DIR
-  g++ -std=c++11 -pthread -O3 fast.cc -o fast
+  g++ -std=c++11 -pthread -O3 fastBPE/main.cc -IfastBPE -o fast
 fi
 echo "fastBPE compiled in: $FASTBPE"
 
@@ -118,11 +124,12 @@ echo "fastText compiled in: $FASTTEXT"
 
 cd $MONO_PATH
 
+<<CMT
 echo "Downloading English files..."
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.en.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.en.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.en.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.en.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.en.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2011.en.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2012.en.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2013.en.shuffled.gz
@@ -132,10 +139,10 @@ wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.en
 # wget -c http://data.statmt.org/wmt18/translation-task/news.2017.en.shuffled.deduped.gz
 
 echo "Downloading French files..."
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.fr.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.fr.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.fr.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.fr.shuffled.gz
+#wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.fr.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2011.fr.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2012.fr.shuffled.gz
 # wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2013.fr.shuffled.gz
@@ -145,6 +152,7 @@ wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.fr
 # wget -c http://data.statmt.org/wmt17/translation-task/news.2017.fr.shuffled.gz
 
 # decompress monolingual data
+
 for FILENAME in news*gz; do
   OUTPUT="${FILENAME::-3}"
   if [ ! -f "$OUTPUT" ]; then
@@ -154,6 +162,7 @@ for FILENAME in news*gz; do
     echo "$OUTPUT already decompressed."
   fi
 done
+CMT
 
 # concatenate monolingual data files
 if ! [[ -f "$SRC_RAW" && -f "$TGT_RAW" ]]; then
@@ -207,8 +216,8 @@ echo "Full vocab in: $FULL_VOCAB"
 # binarize data
 if ! [[ -f "$SRC_TOK.$CODES.pth" && -f "$TGT_TOK.$CODES.pth" ]]; then
   echo "Binarizing data..."
-  $UMT_PATH/preprocess.py $FULL_VOCAB $SRC_TOK.$CODES
-  $UMT_PATH/preprocess.py $FULL_VOCAB $TGT_TOK.$CODES
+  python3 $UMT_PATH/preprocess.py $FULL_VOCAB $SRC_TOK.$CODES
+  python3 $UMT_PATH/preprocess.py $FULL_VOCAB $TGT_TOK.$CODES
 fi
 echo "EN binarized data in: $SRC_TOK.$CODES.pth"
 echo "FR binarized data in: $TGT_TOK.$CODES.pth"
@@ -246,10 +255,10 @@ $FASTBPE applybpe $TGT_TEST.$CODES $TGT_TEST $BPE_CODES $TGT_VOCAB
 
 echo "Binarizing data..."
 rm -f $SRC_VALID.$CODES.pth $TGT_VALID.$CODES.pth $SRC_TEST.$CODES.pth $TGT_TEST.$CODES.pth
-$UMT_PATH/preprocess.py $FULL_VOCAB $SRC_VALID.$CODES
-$UMT_PATH/preprocess.py $FULL_VOCAB $TGT_VALID.$CODES
-$UMT_PATH/preprocess.py $FULL_VOCAB $SRC_TEST.$CODES
-$UMT_PATH/preprocess.py $FULL_VOCAB $TGT_TEST.$CODES
+python3 $UMT_PATH/preprocess.py $FULL_VOCAB $SRC_VALID.$CODES
+python3 $UMT_PATH/preprocess.py $FULL_VOCAB $TGT_VALID.$CODES
+python3 $UMT_PATH/preprocess.py $FULL_VOCAB $SRC_TEST.$CODES
+python3 $UMT_PATH/preprocess.py $FULL_VOCAB $TGT_TEST.$CODES
 
 
 #
@@ -284,3 +293,6 @@ if ! [[ -f "$CONCAT_BPE.vec" ]]; then
   $FASTTEXT skipgram -epoch $N_EPOCHS -minCount 0 -dim 512 -thread $N_THREADS -ws 5 -neg 10 -input $CONCAT_BPE -output $CONCAT_BPE
 fi
 echo "Cross-lingual embeddings in: $CONCAT_BPE.vec"
+
+
+rsync -rvz $SSD_DIR/ $REM_DIR/
