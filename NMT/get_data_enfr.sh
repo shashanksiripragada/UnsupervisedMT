@@ -7,6 +7,7 @@
 #SBATCH --gres gpu:1
 #SBATCH --time 06:00:00
 #SBATCH --mail-type END
+#SBATCH -w gnode06
 
 module load use.own
 module add python/3.7.0
