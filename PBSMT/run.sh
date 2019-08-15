@@ -1,41 +1,54 @@
-# Copyright (c) 2018-present, Facebook, Inc.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-#
+#!/bin/bash
+#SBATCH --job-name unsup_bs64
+#SBATCH --account shashanks
+#SBATCH --partition long 
+#SBATCH --nodes 1
+#SBATCH --mem 45G
+#SBATCH --gres gpu:4
+#SBATCH --time UNLIMITED
+#SBATCH --mail-type END
+##SBATCH -w gnode28
+
+module load use.own
+module add python/3.7.0
+#module add pytorch/1.0.0
 
 set -e
 
-#
-# Data preprocessing configuration
-#
-
-N_MONO=10000000  # number of monolingual sentences for each language
+N_MONO=1000000  # number of monolingual sentences for each language 1M scaled
 N_THREADS=48     # number of threads in data preprocessing
 SRC=en           # source language
 TGT=fr           # target language
 
 
-#
-# Initialize Moses and data paths
-#
 
-# main paths
-UMT_PATH=$PWD
-DATA_PATH=$PWD/data
+REM_DIR="ada:/share1/shashanks/UnsupervisedMT/PBSMT"
+SSD_DIR=/ssd_scratch/cvit/shashanks/UnsupervisedMT/PBSMT
+SRC_DIR=$SSD_DIR/src
+
+UMT_PATH=$SSD_DIR
+DATA_PATH=$SSD_DIR/data
 MONO_PATH=$DATA_PATH/mono
 PARA_PATH=$DATA_PATH/para
 EMB_PATH=$DATA_PATH/embeddings
 
-# create paths
 mkdir -p $DATA_PATH
 mkdir -p $MONO_PATH
 mkdir -p $PARA_PATH
 mkdir -p $EMB_PATH
+mkdir -p $SRC_DIR
+
+rsync -rvz $REM_DIR/src/ $SSD_DIR/src/
+rsync -rvz $REM_DIR/create-phrase-table.py $SSD_DIR/
+rsync -rvz $REM_DIR/data/mono/all.{en,fr}.tok $MONO_PATH/
+rsync -rvz $REM_DIR/data/para/ $PARA_PATH/
+
+set -x
+
+cd $SSD_DIR
 
 # moses
-MOSES_PATH=/private/home/guismay/tools/mosesdecoder  # PATH_WHERE_YOU_INSTALLED_MOSES
+MOSES_PATH=/home/shashanks/moses_dir/moses # PATH_WHERE_YOU_INSTALLED_MOSES
 TOKENIZER=$MOSES_PATH/scripts/tokenizer/tokenizer.perl
 NORM_PUNC=$MOSES_PATH/scripts/tokenizer/normalize-punctuation.perl
 INPUT_FROM_SGM=$MOSES_PATH/scripts/ems/support/input-from-sgm.perl
@@ -49,7 +62,7 @@ MULTIBLEU=$MOSES_PATH/scripts/generic/multi-bleu.perl
 MOSES_BIN=$MOSES_PATH/bin/moses
 
 # training directory
-TRAIN_DIR=$PWD/moses_train_$SRC-$TGT
+TRAIN_DIR=$SSD_DIR/moses_train_$SRC-$TGT
 
 # MUSE path
 MUSE_PATH=$PWD/MUSE
@@ -144,32 +157,7 @@ echo "Pretrained $TGT embeddings found in: $EMB_TGT"
 
 cd $MONO_PATH
 
-echo "Downloading English files..."
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.en.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.en.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2011.en.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2012.en.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2013.en.shuffled.gz
-# wget -c http://www.statmt.org/wmt15/training-monolingual-news-crawl-v2/news.2014.en.shuffled.v2.gz
-# wget -c http://data.statmt.org/wmt16/translation-task/news.2015.en.shuffled.gz
-# wget -c http://data.statmt.org/wmt17/translation-task/news.2016.en.shuffled.gz
-# wget -c http://data.statmt.org/wmt18/translation-task/news.2017.en.shuffled.deduped.gz
-
-echo "Downloading French files..."
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2007.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2008.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2009.fr.shuffled.gz
-wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2010.fr.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2011.fr.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2012.fr.shuffled.gz
-# wget -c http://www.statmt.org/wmt14/training-monolingual-news-crawl/news.2013.fr.shuffled.gz
-# wget -c http://www.statmt.org/wmt15/training-monolingual-news-crawl-v2/news.2014.fr.shuffled.v2.gz
-# wget -c http://data.statmt.org/wmt17/translation-task/news.2015.fr.shuffled.gz
-# wget -c http://data.statmt.org/wmt17/translation-task/news.2016.fr.shuffled.gz
-# wget -c http://data.statmt.org/wmt17/translation-task/news.2017.fr.shuffled.gz
-
+<<CMT
 # decompress monolingual data
 for FILENAME in news*gz; do
   OUTPUT="${FILENAME::-3}"
@@ -190,6 +178,7 @@ fi
 echo "$SRC monolingual data concatenated in: $SRC_RAW"
 echo "$TGT monolingual data concatenated in: $TGT_RAW"
 
+
 # check number of lines
 if ! [[ "$(wc -l < $SRC_RAW)" -eq "$N_MONO" ]]; then echo "ERROR: Number of lines doesn't match! Be sure you have $N_MONO sentences in your $SRC monolingual data."; exit; fi
 if ! [[ "$(wc -l < $TGT_RAW)" -eq "$N_MONO" ]]; then echo "ERROR: Number of lines doesn't match! Be sure you have $N_MONO sentences in your $TGT monolingual data."; exit; fi
@@ -202,6 +191,7 @@ if ! [[ -f "$SRC_TOK" && -f "$TGT_TOK" ]]; then
 fi
 echo "$SRC monolingual data tokenized in: $SRC_TOK"
 echo "$TGT monolingual data tokenized in: $TGT_TOK"
+CMT
 
 # learn truecasers
 if ! [[ -f "$SRC_TRUECASER" && -f "$TGT_TRUECASER" ]]; then
@@ -245,7 +235,7 @@ echo "$TGT binarized language model in: $TGT_LM_BLM"
 #
 
 cd $PARA_PATH
-
+<<CMT
 echo "Downloading parallel data..."
 wget -c http://data.statmt.org/wmt17/translation-task/dev.tgz
 
@@ -263,6 +253,7 @@ $INPUT_FROM_SGM < $SRC_VALID.sgm | $NORM_PUNC -l $SRC | $REM_NON_PRINT_CHAR | $T
 $INPUT_FROM_SGM < $TGT_VALID.sgm | $NORM_PUNC -l $TGT | $REM_NON_PRINT_CHAR | $TOKENIZER -l $TGT -no-escape -threads $N_THREADS > $TGT_VALID.tok
 $INPUT_FROM_SGM < $SRC_TEST.sgm | $NORM_PUNC -l $SRC | $REM_NON_PRINT_CHAR | $TOKENIZER -l $SRC -no-escape -threads $N_THREADS > $SRC_TEST.tok
 $INPUT_FROM_SGM < $TGT_TEST.sgm | $NORM_PUNC -l $TGT | $REM_NON_PRINT_CHAR | $TOKENIZER -l $TGT -no-escape -threads $N_THREADS > $TGT_TEST.tok
+CMT
 
 echo "Truecasing valid and test data..."
 $TRUECASER --model $SRC_TRUECASER < $SRC_VALID.tok > $SRC_VALID.true

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name unsupTrain
+#SBATCH --job-name unsup_bs64
 #SBATCH --account shashanks
 #SBATCH --partition long 
 #SBATCH --nodes 1
@@ -7,23 +7,23 @@
 #SBATCH --gres gpu:4
 #SBATCH --time UNLIMITED
 #SBATCH --mail-type END
-##SBATCH -w gnode
+#SBATCH -w gnode28
 
 module load use.own
 module add python/3.7.0
 module add pytorch/1.0.0
 
-set -x
-
-REMOTE_DIR="ada:/share1/shashanks/UnsupervisedMT/NMT"
+REM_DIR="ada:/share1/shashanks/UnsupervisedMT/NMT"
 SSD_DIR=/ssd_scratch/cvit/shashanks/UnsupervisedMT/NMT
 MONO_DIR=$SSD_DIR/data/mono
-PARA_DIR=$SSD_DIR/data/para/dev
+PARA_DIR=$SSD_DIR/data/para
 SRC_DIR=$SSD_DIR/src
 TOOLS_DIR=$SSD_DIR/tools
 
+
 mkdir -p $SSD_DIR $MONO_DIR $PARA_DIR $SRC_DIR $TOOLS_DIR
 
+<<CMT
 rsync -rvz $REM_DIR/src/ $SSD_DIR/src/
 rsync -rvz $REM_DIR/tools/ $SSD_DIR/tools/
 rsync -rvz $REM_DIR/main.py $SSD_DIR/
@@ -31,16 +31,17 @@ rsync -rvz $REM_DIR/preprocess.py $SSD_DIR/
 rsync -rvz $REM_DIR/data/mono/all.{en,fr}.tok.60000.pth $MONO_DIR/
 rsync -rvz $REM_DIR/data/para/ $PARA_DIR/
 rsync -rvz $REM_DIR/data/mono/all.en-fr.60000.vec $MONO_DIR/
+CMT
+set -x
 
 MONO_DATASET='en:./data/mono/all.en.tok.60000.pth,,;fr:./data/mono/all.fr.tok.60000.pth,,'
 PARA_DATASET='en-fr:,./data/para/dev/newstest2013-ref.XX.60000.pth,./data/para/dev/newstest2014-fren-src.XX.60000.pth'
 PRETRAINED='./data/mono/all.en-fr.60000.vec'
 
 cd $SSD_DIR
-pwd
 
 python3 main.py \
-	--exp_name test \
+	--exp_name test_64 \
 	--transformer True \
 	--n_enc_layers 4 \
 	--n_dec_layers 4 \
